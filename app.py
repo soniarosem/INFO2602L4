@@ -200,8 +200,9 @@ def logout_action():
 @login_required(Admin)
 def admin_page():
   page = request.args.get('page', 1, type=int)
-  todos = current_user.search_todos(page)
-  return render_template('admin.html', todos=todos, page=page)
+  q = request.args.get('q', default='', type=str)
+  todos = current_user.search_todos(q, page)
+  return render_template('admin.html', todos=todos, page=page, q=q)
 
 if __name__ == "__main__":
   app.run(host='0.0.0.0', port=81)
