@@ -178,6 +178,10 @@ class Admin(User):
       'polymorphic_identity': 'admin',
   }
 
+  def search_todos(self, page):
+    matching_todos = Todo.query
+    return matching_todos.paginate(page=page, per_page=10)
+
   def get_all_todos_json(self):
     todos = Todo.query.all()
     if todos:
