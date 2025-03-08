@@ -39,18 +39,22 @@ app = create_app()
 jwt = JWTManager(app)
 
 
+#tells flask jwt how to pull a user object when the user_id id decoded from a token
 @jwt.user_lookup_loader
 def user_lookup_callback(_jwt_header, jwt_data):
   identity = jwt_data["sub"]
   return User.query.get(identity)
 
+#Defines what page to show when token is invalid
+
 @jwt.invalid_token_loader
 def custom_unauthorized_response(error):
     return render_template('401.html', error=error), 401
 
+#Defines what page to show when token is expired
 @jwt.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
-    return render_template('401.html'), 401  
+    return render_template('401.html'), 401 
 
 # custom decorator authorize routes for admin or regular user
 def login_required(required_class):
@@ -65,7 +69,7 @@ def login_required(required_class):
     return decorated_function
   return wrapper
 
-
+#tells flask jwt to encode the user's id in the token
 def login_user(username, password):
   user = User.query.filter_by(username=username).first()
   if user and user.check_password(password):
@@ -132,15 +136,18 @@ def login_action():
   token = login_user(data['username'], data['password'])
   print(token)
   response = None
+  user = User.query.filter_by(username=data['username']).first()
   if token:
     flash('Logged in successfully.')  # send message to next page
-    response = redirect(
-        url_for('todos_page'))  # redirect to main page if login successful
+    if user.type == "regular user":
+      response = redirect(url_for('todos_page'))
+    else :
+      response = redirect(url_for('admin_page'))  # redirect to main page if login successful
     set_access_cookies(response, token)
   else:
     flash('Invalid username or password')  # send message to next page
     response = redirect(url_for('login_page'))
-  return response
+   return response
 
 @app.route('/createTodo', methods=['POST'])
 @jwt_required()
@@ -188,6 +195,12 @@ def logout_action():
   response = redirect(url_for('login_page'))
   unset_jwt_cookies(response)
   return response
+
+@app.route('/admin')
+@login_required(Admin)
+def admin_page():
+  todos = Todo.query.all()
+  return render_template('admin.html', todos=todos)
 
 if __name__ == "__main__":
   app.run(host='0.0.0.0', port=81)
