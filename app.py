@@ -29,7 +29,6 @@ def create_app():
   app.config["JWT_COOKIE_SECURE"] = True
   app.config["JWT_SECRET_KEY"] = "super-secret"
   app.config["JWT_COOKIE_CSRF_PROTECT"] = False
-  app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 60 * 60 * 24 * 7  # 1 week
   db.init_app(app)
   app.app_context().push()
   return app
@@ -39,26 +38,30 @@ app = create_app()
 jwt = JWTManager(app)
 
 
-#tells flask jwt how to pull a user object when the user_id id decoded from a token
+@jwt.user_identity_loader
+def user_identity_lookup(user):
+  return user.id
+
+
 @jwt.user_lookup_loader
 def user_lookup_callback(_jwt_header, jwt_data):
   identity = jwt_data["sub"]
   return User.query.get(identity)
 
-#Defines what page to show when token is invalid
-
+@jwt.expired_token_loader
 @jwt.invalid_token_loader
 def custom_unauthorized_response(error):
     return render_template('401.html', error=error), 401
 
-#Defines what page to show when token is expired
 @jwt.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
-    return render_template('401.html'), 401 
+    return render_template('401.html'), 401  
 
 # custom decorator authorize routes for admin or regular user
 def login_required(required_class):
+
   def wrapper(f):
+
     @wraps(f)
     @jwt_required()  # Ensure JWT authentication
     def decorated_function(*args, **kwargs):
@@ -66,14 +69,16 @@ def login_required(required_class):
       if user.__class__ != required_class:  # Check class equality
         return jsonify(message='Invalid user role'), 403
       return f(*args, **kwargs)
+
     return decorated_function
+
   return wrapper
 
-#tells flask jwt to encode the user's id in the token
+
 def login_user(username, password):
   user = User.query.filter_by(username=username).first()
   if user and user.check_password(password):
-    token = create_access_token(identity=user.id)
+    token = create_access_token(identity=user)
     return token
   return None
 
@@ -110,6 +115,14 @@ def edit_todo_page(id):
   flash('Todo not found or unauthorized')
   return redirect(url_for('todos_page'))
 
+@app.route('/admin')
+@login_required(Admin)
+def admin_page():
+  page = request.args.get('page', 1, type=int)
+  q = request.args.get('q', default='', type=str)
+  done = request.args.get('done', default='any', type=str)
+  todos = current_user.search_todos(q, done, page)
+  return render_template('admin.html', todos=todos, q=q, page=page, done=done)
 
 # Action Routes
 @app.route('/signup', methods=['POST'])
@@ -130,11 +143,11 @@ def signup_action():
     response = redirect(url_for('login_page'))
   return response
 
+
 @app.route('/login', methods=['POST'])
 def login_action():
   data = request.form
   token = login_user(data['username'], data['password'])
-  print(token)
   response = None
   user = User.query.filter_by(username=data['username']).first()
   if token:
@@ -147,15 +160,8 @@ def login_action():
   else:
     flash('Invalid username or password')  # send message to next page
     response = redirect(url_for('login_page'))
-   return response
+  return response
 
-@app.route('/createTodo', methods=['POST'])
-@jwt_required()
-def create_todo_action():
-  data = request.form
-  current_user.add_todo(data['text'])
-  flash('Created')
-  return redirect(url_for('todos_page'))
 
 @app.route('/toggle/<id>', methods=['POST'])
 @jwt_required()
@@ -166,6 +172,27 @@ def toggle_todo_action(id):
   else:
     flash(f'Todo { "done" if todo.done else "not done" }!')
   return redirect(url_for('todos_page'))
+
+
+@app.route('/createTodo', methods=['POST'])
+@jwt_required()
+def create_todo_action():
+  data = request.form
+  current_user.add_todo(data['text'])
+  flash('Created')
+  return redirect(url_for('todos_page'))
+
+
+@app.route('/deleteTodo/<id>', methods=["GET"])
+@jwt_required()
+def delete_todo_action(id):
+  res = current_user.delete_todo(id)
+  if res == None:
+    flash('Invalid id or unauthorized')
+  else:
+    flash('Todo Deleted')
+  return redirect(url_for('todos_page'))
+
 
 @app.route('/editTodo/<id>', methods=["POST"])
 @jwt_required()
@@ -178,15 +205,6 @@ def edit_todo_action(id):
     flash('Todo not found or unauthorized')
   return redirect(url_for('todos_page'))
 
-@app.route('/deleteTodo/<id>', methods=["GET"])
-@jwt_required()
-def delete_todo_action(id):
-  res = current_user.delete_todo(id)
-  if res == None:
-    flash('Invalid id or unauthorized')
-  else:
-    flash('Todo Deleted')
-  return redirect(url_for('todos_page'))
 
 @app.route('/logout', methods=['GET'])
 @jwt_required()
@@ -196,13 +214,16 @@ def logout_action():
   unset_jwt_cookies(response)
   return response
 
-@app.route('/admin')
+@app.route('/todo-stats', methods=["GET"])
 @login_required(Admin)
-def admin_page():
-  page = request.args.get('page', 1, type=int)
-  q = request.args.get('q', default='', type=str)
-  todos = current_user.search_todos(q, page)
-  return render_template('admin.html', todos=todos, page=page, q=q)
+def todo_stats():
+  return jsonify(current_user.get_todo_stats())
+
+@app.route('/stats')
+@login_required(Admin)
+def stats_page():
+  return render_template('stats.html')
+
 
 if __name__ == "__main__":
   app.run(host='0.0.0.0', port=81)
