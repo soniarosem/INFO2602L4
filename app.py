@@ -108,7 +108,39 @@ def edit_todo_page(id):
 
 
 # Action Routes
+@app.route('/signup', methods=['POST'])
+def signup_action():
+  data = request.form  # get data from form submission
+  newuser = RegularUser(username=data['username'], email=data['email'], password=data['password'])  # create user object
+  response = None
+  try:
+    db.session.add(newuser)
+    db.session.commit()  # save user
+    token = login_user(data['username'], data['password'])
+    response = redirect(url_for('todos_page'))
+    set_access_cookies(response, token)
+    flash('Account Created!')  # send message
+  except Exception:  # attempted to insert a duplicate user
+    db.session.rollback()
+    flash("username or email already exists")  # error message
+    response = redirect(url_for('login_page'))
+  return response
 
+@app.route('/login', methods=['POST'])
+def login_action():
+  data = request.form
+  token = login_user(data['username'], data['password'])
+  print(token)
+  response = None
+  if token:
+    flash('Logged in successfully.')  # send message to next page
+    response = redirect(
+        url_for('todos_page'))  # redirect to main page if login successful
+    set_access_cookies(response, token)
+  else:
+    flash('Invalid username or password')  # send message to next page
+    response = redirect(url_for('login_page'))
+  return response
 
 
 
